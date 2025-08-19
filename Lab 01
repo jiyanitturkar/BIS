@@ -1,0 +1,95 @@
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+
+def calculate_distance(city1, city2):
+    return np.sqrt((city1[0] - city2[0]) ** 2 + (city1[1] - city2[1]) ** 2)
+
+def calculate_total_distance(route, cities):
+    total_distance = 0
+    for i in range(len(route)):
+        city1 = cities[route[i]]
+        city2 = cities[route[(i + 1) % len(route)]]
+        total_distance += calculate_distance(city1, city2)
+    return total_distance
+
+def create_population(pop_size, num_cities):
+    population = []
+    for _ in range(pop_size):
+        route = random.sample(range(num_cities), num_cities)
+        population.append(route)
+    return population
+
+def select_parents(population, fitness):
+    selected = random.choices(population, weights=fitness, k=2)
+    return selected[0], selected[1]
+
+def crossover(parent1, parent2):
+    size = len(parent1)
+    crossover_point1 = random.randint(0, size - 1)
+    crossover_point2 = random.randint(crossover_point1 + 1, size)
+    offspring1 = [-1] * size
+    offspring2 = [-1] * size
+    offspring1[crossover_point1:crossover_point2] = parent1[crossover_point1:crossover_point2]
+    offspring2[crossover_point1:crossover_point2] = parent2[crossover_point1:crossover_point2]
+    for i in range(size):
+        if offspring1[i] == -1:
+            for j in range(size):
+                if parent2[j] not in offspring1:
+                    offspring1[i] = parent2[j]
+                    break
+        if offspring2[i] == -1:
+            for j in range(size):
+                if parent1[j] not in offspring2:
+                    offspring2[i] = parent1[j]
+                    break
+    return offspring1, offspring2
+
+def mutate(route):
+    if random.random() < 0.1:
+        idx1, idx2 = random.sample(range(len(route)), 2)
+        route[idx1], route[idx2] = route[idx2], route[idx1]
+    return route
+
+def genetic_algorithm(cities, population_size=100, generations=500):
+    num_cities = len(cities)
+    population = create_population(population_size, num_cities)
+    best_fitness = []
+    for generation in range(generations):
+        fitness = [1 / calculate_total_distance(route, cities) for route in population]
+        best_idx = np.argmax(fitness)
+        best_route = population[best_idx]
+        best_route_distance = calculate_total_distance(best_route, cities)
+        best_fitness.append(1 / best_route_distance)
+        new_population = []
+        new_population.append(best_route)
+        while len(new_population) < population_size:
+            parent1, parent2 = select_parents(population, fitness)
+            offspring1, offspring2 = crossover(parent1, parent2)
+            new_population.append(mutate(offspring1))
+            if len(new_population) < population_size:
+                new_population.append(mutate(offspring2))
+        population = new_population
+    return best_route, best_route_distance, best_fitness
+
+def generate_random_cities(num_cities):
+    return [(random.randint(0, 100), random.randint(0, 100)) for _ in range(num_cities)]
+
+def plot_cities_and_route(cities, route):
+    x = [cities[i][0] for i in route] + [cities[route[0]][0]]
+    y = [cities[i][1] for i in route] + [cities[route[0]][1]]
+    plt.figure(figsize=(8, 8))
+    plt.scatter([city[0] for city in cities], [city[1] for city in cities], color='red')
+    plt.plot(x, y, color='blue')
+    plt.title('TSP Solution (Genetic Algorithm)')
+    plt.xlabel('X Coordinate')
+    plt.ylabel('Y Coordinate')
+    plt.show()
+
+if __name__ == "__main__":
+    num_cities = 10
+    cities = generate_random_cities(num_cities)
+    best_route, best_route_distance, best_fitness = genetic_algorithm(cities)
+    print(f"Best route: {best_route}")
+    print(f"Best route distance: {best_route_distance}")
+    plot_cities_and_route(cities, best_route)
