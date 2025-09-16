@@ -1,0 +1,124 @@
+#include <iostream>
+#include <vector>
+#include <random>
+#include <algorithm>
+#include <limits>
+#include <cmath>
+#include <iomanip>
+
+// --- CONFIGURATION ---
+constexpr int DIMENSIONS = 5;
+constexpr int SWARM_SIZE = 30;
+constexpr int MAX_ITERATIONS = 100;
+constexpr double MIN_POSITION = -10.0;
+constexpr double MAX_POSITION = 10.0;
+constexpr double VELOCITY_MIN = -1.0;
+constexpr double VELOCITY_MAX = 1.0;
+constexpr double C1 = 2.0; // cognitive component
+constexpr double C2 = 2.0; // social component
+constexpr double INERTIA = 0.7;
+
+std::random_device rd;
+std::mt19937 gen(rd());
+std::uniform_real_distribution<> distPosition(MIN_POSITION, MAX_POSITION);
+std::uniform_real_distribution<> distVelocity(VELOCITY_MIN, VELOCITY_MAX);
+std::uniform_real_distribution<> dist01(0.0, 1.0);
+
+// --- SPHERE FUNCTION ---
+double evaluate(const std::vector<double>& position) {
+    double sum = 0.0;
+    for (double x : position) {
+        sum += x * x;
+    }
+    return sum;
+}
+
+// --- PARTICLE CLASS ---
+class Particle {
+public:
+    std::vector<double> position;
+    std::vector<double> velocity;
+    std::vector<double> bestPosition;
+    double bestValue;
+
+    Particle() : position(DIMENSIONS), velocity(DIMENSIONS), bestPosition(DIMENSIONS), bestValue(std::numeric_limits<double>::max()) {
+        for (int i = 0; i < DIMENSIONS; i++) {
+            position[i] = distPosition(gen);
+            velocity[i] = distVelocity(gen);
+            bestPosition[i] = position[i];
+        }
+        bestValue = evaluate(position);
+    }
+
+    void updateVelocity(const std::vector<double>& globalBestPosition) {
+        for (int i = 0; i < DIMENSIONS; i++) {
+            double r1 = dist01(gen);
+            double r2 = dist01(gen);
+
+            velocity[i] = INERTIA * velocity[i]
+                + C1 * r1 * (bestPosition[i] - position[i])
+                + C2 * r2 * (globalBestPosition[i] - position[i]);
+
+            // Clamp velocity
+            if (velocity[i] > VELOCITY_MAX) velocity[i] = VELOCITY_MAX;
+            if (velocity[i] < VELOCITY_MIN) velocity[i] = VELOCITY_MIN;
+        }
+    }
+
+    void updatePosition() {
+        for (int i = 0; i < DIMENSIONS; i++) {
+            position[i] += velocity[i];
+
+            // Clamp position
+            if (position[i] > MAX_POSITION) position[i] = MAX_POSITION;
+            if (position[i] < MIN_POSITION) position[i] = MIN_POSITION;
+        }
+
+        double value = evaluate(position);
+        if (value < bestValue) {
+            bestValue = value;
+            bestPosition = position;
+        }
+    }
+};
+
+// --- MAIN OPTIMIZATION ---
+int main() {
+    std::vector<Particle> swarm(SWARM_SIZE);
+    std::vector<double> globalBestPosition(DIMENSIONS);
+    double globalBestValue = std::numeric_limits<double>::max();
+
+    // Initialize swarm and global best
+    for (auto& particle : swarm) {
+        if (particle.bestValue < globalBestValue) {
+            globalBestValue = particle.bestValue;
+            globalBestPosition = particle.bestPosition;
+        }
+    }
+
+    // PSO loop
+    for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
+        for (auto& particle : swarm) {
+            particle.updateVelocity(globalBestPosition);
+            particle.updatePosition();
+
+            if (particle.bestValue < globalBestValue) {
+                globalBestValue = particle.bestValue;
+                globalBestPosition = particle.bestPosition;
+            }
+        }
+
+        if (iter % 10 == 0 || iter == MAX_ITERATIONS - 1) {
+            std::cout << "Iteration " << iter << ": Best Value = " << std::fixed << std::setprecision(6) << globalBestValue << '\n';
+        }
+    }
+
+    // Final output
+    std::cout << "\nBest solution found:\n";
+    for (int i = 0; i < DIMENSIONS; i++) {
+        std::cout << "x[" << i << "] = " << std::fixed << std::setprecision(4) << globalBestPosition[i] << '\n';
+    }
+    std::cout << "Final minimized value: " << std::fixed << std::setprecision(6) << globalBestValue << '\n';
+
+    return 0;
+}
