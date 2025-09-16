@@ -1,0 +1,223 @@
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <limits>
+#include <algorithm>
+#include <numeric>
+
+class AntColony {
+public:
+    using Coord = std::pair<double, double>;
+
+    AntColony(const std::vector<Coord>& coords, int n_ants, int n_iterations,
+              double alpha = 1.0, double beta = 5.0, double rho = 0.5, double initial_pheromone = 1.0)
+        : coords(coords), n_cities(coords.size()), n_ants(n_ants), n_iterations(n_iterations),
+          alpha(alpha), beta(beta), rho(rho), initial_pheromone(initial_pheromone),
+          dist_matrix(n_cities, std::vector<double>(n_cities, 0.0)),
+          pheromone(n_cities, std::vector<double>(n_cities, initial_pheromone)),
+          heuristic(n_cities, std::vector<double>(n_cities, 0.0)),
+          best_cost(std::numeric_limits<double>::max())
+    {
+        calculateDistances();
+        calculateHeuristic();
+
+        // Initialize random number generators
+        rd = std::random_device{};
+        gen = std::mt19937(rd());
+        city_dist = std::uniform_int_distribution<>(0, n_cities - 1);
+        prob_dist = std::uniform_real_distribution<>(0.0, 1.0);
+    }
+
+    std::vector<int> run() {
+        for (int iteration = 0; iteration < n_iterations; ++iteration) {
+            std::vector<std::vector<int>> all_solutions;
+            std::vector<double> all_costs;
+
+            for (int ant = 0; ant < n_ants; ++ant) {
+                std::vector<int> solution = constructSolution();
+                double cost = calculateCost(solution);
+                all_solutions.push_back(solution);
+                all_costs.push_back(cost);
+
+                if (cost < best_cost) {
+                    best_cost = cost;
+                    best_solution = solution;
+                }
+            }
+
+            updatePheromone(all_solutions, all_costs);
+            std::cout << "Iteration " << iteration + 1 << "/" << n_iterations 
+                      << " - Best cost so far: " << best_cost << std::endl;
+        }
+        return best_solution;
+    }
+
+    double getBestCost() const {
+        return best_cost;
+    }
+
+private:
+    std::vector<Coord> coords;
+    int n_cities;
+    int n_ants;
+    int n_iterations;
+    double alpha, beta, rho, initial_pheromone;
+
+    std::vector<std::vector<double>> dist_matrix;
+    std::vector<std::vector<double>> pheromone;
+    std::vector<std::vector<double>> heuristic;
+
+    std::vector<int> best_solution;
+    double best_cost;
+
+    // Random generators
+    std::random_device rd;
+    std::mt19937 gen;
+    std::uniform_int_distribution<> city_dist;
+    std::uniform_real_distribution<> prob_dist;
+
+    void calculateDistances() {
+        for (int i = 0; i < n_cities; ++i) {
+            for (int j = i + 1; j < n_cities; ++j) {
+                double dx = coords[i].first - coords[j].first;
+                double dy = coords[i].second - coords[j].second;
+                double dist = std::sqrt(dx * dx + dy * dy);
+                dist_matrix[i][j] = dist;
+                dist_matrix[j][i] = dist;
+            }
+        }
+    }
+
+    void calculateHeuristic() {
+        // heuristic[i][j] = 1 / dist[i][j] with diagonal zero
+        for (int i = 0; i < n_cities; ++i) {
+            for (int j = 0; j < n_cities; ++j) {
+                if (i != j && dist_matrix[i][j] != 0) {
+                    heuristic[i][j] = 1.0 / dist_matrix[i][j];
+                } else {
+                    heuristic[i][j] = 0.0;
+                }
+            }
+        }
+    }
+
+    int chooseNextCity(int current_city, const std::vector<int>& visited) {
+        std::vector<double> prob_num(n_cities, 0.0);
+        double sum_prob = 0.0;
+
+        for (int city = 0; city < n_cities; ++city) {
+            if (std::find(visited.begin(), visited.end(), city) == visited.end()) {
+                prob_num[city] = std::pow(pheromone[current_city][city], alpha) *
+                                 std::pow(heuristic[current_city][city], beta);
+                sum_prob += prob_num[city];
+            }
+        }
+
+        if (sum_prob == 0) {
+            // No pheromone or heuristic info, pick randomly among unvisited
+            std::vector<int> candidates;
+            for (int city = 0; city < n_cities; ++city) {
+                if (std::find(visited.begin(), visited.end(), city) == visited.end()) {
+                    candidates.push_back(city);
+                }
+            }
+            std::uniform_int_distribution<> dist(0, candidates.size() - 1);
+            return candidates[dist(gen)];
+        }
+
+        // Roulette wheel selection
+        double r = prob_dist(gen);
+        double cumulative = 0.0;
+        for (int city = 0; city < n_cities; ++city) {
+            if (prob_num[city] > 0) {
+                cumulative += prob_num[city] / sum_prob;
+                if (r <= cumulative) {
+                    return city;
+                }
+            }
+        }
+
+        // Should not reach here, but just in case, return a random unvisited city
+        std::vector<int> candidates;
+        for (int city = 0; city < n_cities; ++city) {
+            if (std::find(visited.begin(), visited.end(), city) == visited.end()) {
+                candidates.push_back(city);
+            }
+        }
+        std::uniform_int_distribution<> dist(0, candidates.size() - 1);
+        return candidates[dist(gen)];
+    }
+
+    std::vector<int> constructSolution() {
+        std::vector<int> solution;
+        int start_city = city_dist(gen);
+        solution.push_back(start_city);
+
+        while (solution.size() < static_cast<size_t>(n_cities)) {
+            int current_city = solution.back();
+            int next_city = chooseNextCity(current_city, solution);
+            solution.push_back(next_city);
+        }
+        return solution;
+    }
+
+    double calculateCost(const std::vector<int>& solution) {
+        double cost = 0.0;
+        for (size_t i = 0; i < solution.size() - 1; ++i) {
+            cost += dist_matrix[solution[i]][solution[i + 1]];
+        }
+        cost += dist_matrix[solution.back()][solution.front()];
+        return cost;
+    }
+
+    void updatePheromone(const std::vector<std::vector<int>>& solutions, const std::vector<double>& costs) {
+        // Evaporation
+        for (int i = 0; i < n_cities; ++i) {
+            for (int j = 0; j < n_cities; ++j) {
+                pheromone[i][j] *= (1.0 - rho);
+            }
+        }
+
+        // Deposit pheromone
+        for (size_t s = 0; s < solutions.size(); ++s) {
+            double deposit_amount = 1.0 / costs[s];
+            const std::vector<int>& solution = solutions[s];
+
+            for (size_t i = 0; i < solution.size() - 1; ++i) {
+                int from = solution[i];
+                int to = solution[i + 1];
+                pheromone[from][to] += deposit_amount;
+                pheromone[to][from] += deposit_amount;
+            }
+            // Close the loop
+            pheromone[solution.back()][solution.front()] += deposit_amount;
+            pheromone[solution.front()][solution.back()] += deposit_amount;
+        }
+    }
+};
+
+
+int main() {
+    std::vector<std::pair<double, double>> cities = {
+        {0, 0},
+        {1, 5},
+        {5, 2},
+        {6, 6},
+        {8, 3},
+        {7, 7},
+        {2, 8},
+        {3, 3}
+    };
+
+    AntColony aco(cities, 10, 5, 1.0, 5.0, 0.5, 1.0);
+    std::vector<int> best_solution = aco.run();
+
+    std::cout << "\nBest route found:\n";
+    for (int city : best_solution) {
+        std::cout << city << " ";
+    }
+    std::cout << "\nCost of the best route: " << aco.getBestCost() << std::endl;
+
+    return 0;
+}
